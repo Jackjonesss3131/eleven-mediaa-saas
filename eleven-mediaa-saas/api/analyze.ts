@@ -92,7 +92,6 @@ ${OUTPUT_CONTRACT}`;
 const VALID_TYPES: AnalysisType[] = ['geo', 'aha', 'semantic'];
 
 function safeParse(raw: string): AnalysisResult {
-  // Gemini con responseMimeType JSON no debería devolver fences, pero blindamos igual.
   const cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
   const start = cleaned.indexOf('{');
   const end = cleaned.lastIndexOf('}');
@@ -155,25 +154,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'Tipo de análisis no válido.' });
     }
 
-    // Recorte defensivo: mantiene la latencia dentro del límite de 10s del plan Hobby.
     const safeDescription = description.slice(0, 6000);
     const safeName = saasName.slice(0, 120);
 
-    /* --- 3. Única llamada a Gemini --- */
+    /* --- 3. Llamada a Gemini con fallback de modelo --- */
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
-      generationConfig: {
-        temperature: 0.4,
-        maxOutputTokens: 900,
-        responseMimeType: 'application/json',
-      },
-    });
+    const MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest'];
 
-    const result = await model.generateContent(
-      buildPrompt(analysisType, safeName, safeDescription)
-    );
-    const raw = result.response.text();
+    const prompt = buildPrompt(analysisType, safeName, safeDescription);
+    let raw = '';
+    let lastError = '';
+
+    for (const modelName of MODELS) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          generationConfig: {
+            temperature: 0.4,
+            maxOutputTokens: 900,
+            responseMimeType: 'application/json',
+          },
+        });
+        const result = await model.generateContent(prompt);
+        raw = result.response.text();
+        console.log(`[analyze] OK con modelo: ${modelName}`);
+        break;
+      } catch (e) {
+        lastError = e instanceof Error ? e.message : String(e);
+        console.error(`[analyze] Fallo ${modelName}: ${lastError}`);
+      }
+    }
+
+    if (!raw) {
+      return res.status(502).json({
+        error: `Gemini rechazó la petición. Detalle: ${lastError}`,
+      });
+    }
 
     /* --- 4. Parseo estricto --- */
     let payload: AnalysisResult;
@@ -197,8 +213,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Error desconocido';
     console.error('[analyze] Error inesperado:', message);
-    return res.status(500).json({
-      error: 'Ocurrió un error procesando el análisis. Vuelve a intentarlo en unos segundos.',
-    });
+    return res.status(500).json({ error: `Error interno: ${message}` });
   }
 }
