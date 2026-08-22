@@ -141,7 +141,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
               temperature: 0.4,
-              maxOutputTokens: 700,
+              maxOutputTokens: 2000,
               responseMimeType: 'application/json',
             },
           }),
