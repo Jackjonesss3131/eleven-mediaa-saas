@@ -121,8 +121,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const prompt = buildPrompt(analysisType, saasName.slice(0, 120), description.slice(0, 6000));
 
-    const models = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash'];
-
+    const models = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-latest'];
+    
     let rawText = '';
     let lastError = '';
 
